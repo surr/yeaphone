@@ -1,6 +1,6 @@
 ## Process this file with automake to produce Makefile.in
 
-yeaphone_CPPFLAGS = @LINPHONE_CFLAGS@
+yeaphone_CPPFLAGS = @LINPHONE_CFLAGS@ @OSIP_CFLAGS@
 
 # Program binary name
 bin_PROGRAMS = yeaphone
@@ -11,7 +11,7 @@ yeaphone_SOURCES = lpcontrol.c  yeaphone.c ylcontrol.h yldisp.h ypconfig.h \
                    ypmainloop.h ypmainloop.c ylsysfs.h ylsysfs.c
 
 # libraries
-yeaphone_LDADD = @LINPHONE_LIBS@
+yeaphone_LDADD = @LINPHONE_LIBS@ @OSIP_LIBS@
 yeaphone_LDFLAGS = -Wl,--rpath -Wl,@LINPHONE_LIBDIR@ @LIBTHREAD@
 
 # mark headers to include also in package
