@@ -71,7 +71,6 @@ typedef struct ylcontrol_data_s {
   char *default_display;
   
   int hard_shutdown;
-  int linphone_2_1_1_bug;
 
   LinphoneCore* lc;
 } ylcontrol_data_t;
@@ -636,12 +635,6 @@ void lps_callback(struct _LinphoneCore *lc,
     case GSTATE_REG_FAILED:
       if (lpstate_power != GSTATE_POWER_ON)
         break;
-      if (ylcontrol_data.linphone_2_1_1_bug &&
-          !strcmp(gstate->message, "Authentication required")) {
-        /* force GSTATE_REG_OK */
-        gstate_new_state(lc, GSTATE_REG_OK, NULL);
-        break;
-      }
       if (lpstate_call == GSTATE_CALL_IDLE) {
         if (ylcontrol_data.dialnum[0] == '\0') {
           set_yldisp_text("-reg failed-");
@@ -682,18 +675,6 @@ void lps_callback(struct _LinphoneCore *lc,
       break;
       
     case GSTATE_CALL_IN_INVITE:
-      /* In linphone <= 2.1.1 there is a bug which causes the message
-       * field to be NULL, the actual caller ID has to be captured in
-       * call_received_callback().
-       */
-      if (gstate->message == NULL) {
-        if (!ylcontrol_data.linphone_2_1_1_bug) {
-          ylcontrol_data.linphone_2_1_1_bug = 1;
-          printf("Warning: A liblinphone bug was detected, please consider\n"
-                 "         patching or upgrading linphone to > 2.1.1!\n");
-        }
-        break;
-      }
       extract_callernum(&ylcontrol_data, gstate->message);
       load_custom_ringtone(ylcontrol_data.callernum);
       if (strlen(ylcontrol_data.callernum)) {
@@ -767,21 +748,6 @@ void lps_callback(struct _LinphoneCore *lc,
 
 /**********************************/
 
-void call_received_callback(struct _LinphoneCore *lc, const char *from)
-{
-  if (ylcontrol_data.linphone_2_1_1_bug) {
-    /* fake a second "general-state" callback */
-    LinphoneGeneralState gstate;
-    gstate.old_state = GSTATE_CALL_IDLE;
-    gstate.new_state = GSTATE_CALL_IN_INVITE;
-    gstate.group = GSTATE_GROUP_CALL;
-    gstate.message = from;
-    lps_callback(lc, &gstate);
-  }
-}
-
-/**********************************/
-
 void ylcontrol_keylong_callback(int id, int group, void *private_data) {
   ylcontrol_data_t *ylc_ptr = private_data;
   
@@ -829,7 +795,6 @@ void init_ylcontrol(char *countrycode) {
   int modified = 0;
   
   set_lpstates_callback(lps_callback);
-  set_call_received_callback(call_received_callback);
 
   ylcontrol_data.intl_access_code = ypconfig_get_value("intl-access-code");
   if (!ylcontrol_data.intl_access_code) {
@@ -863,7 +828,6 @@ void start_ylcontrol() {
   const char *path_event;
   
   ylcontrol_data.hard_shutdown = 0;
-  ylcontrol_data.linphone_2_1_1_bug = 0;
   ylcontrol_data.off_hook = 0;
   
   path_event = ylsysfs_get_event_path();

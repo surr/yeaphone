@@ -231,13 +231,6 @@ void set_lpstates_callback(GeneralStateChange callback)
 
 /*****************************************************************/
 
-void set_call_received_callback(InviteReceivedCb callback)
-{
-  lpc_vtable.inv_recv = callback;
-}
-
-/*****************************************************************/
-
 void override_soundcards()
 {
   ylsysfs_model model;
