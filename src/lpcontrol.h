@@ -45,9 +45,9 @@ typedef enum lpstates_command_e {
   LPCOMMAND_SPKR_VOLDN,
 } lpstates_command_t;
 
-
-void set_lpstates_callback(GeneralStateChange callback);
-
+void set_lpstates_callback(LinphoneGlobalStateCb callback,
+		LinphoneCallStateCb ccallback,
+		LinphoneRegistrationStateCb rcallback);
 void start_lpcontrol(int autoregister, void *userdata);
 
 void lpstates_submit_command(lpstates_command_t command, char *arg);

@@ -71,7 +71,9 @@
 
 typedef struct lpcontrol_data_s {
   int autoregister;
-  GeneralStateChange callback;
+  LinphoneGlobalStateCb callback;
+  LinphoneCallStateCb ccallback;
+  LinphoneRegistrationStateCb rcallback;
   
   LinphoneCoreVTable *vtable;
   LinphoneCore *core_state;
@@ -101,7 +103,7 @@ static void lpc_new_unknown_subscriber(LinphoneCore *lc, LinphoneFriend *lf,
                                        const char *url);
 static void lpc_bye_received(LinphoneCore *lc, const char *from);
 static void lpc_text_received(LinphoneCore *lc, LinphoneChatRoom *cr,
-                              const char *from, const char *msg);
+                              const LinphoneAddress *from, const char *msg);
 
 /***************************************************************************
  *
@@ -110,9 +112,10 @@ static void lpc_text_received(LinphoneCore *lc, LinphoneChatRoom *cr,
  ***************************************************************************/
 
 LinphoneCoreVTable lpc_vtable = {
-  show:                   lpc_dummy,
+/*
+  show:                   (ShowInterfaceCb) lpc_dummy,
   inv_recv:               lpc_call_received,
-  bye_recv:               lpc_bye_received, 
+  bye_recv:               lpc_bye_received,
   notify_presence_recv:   lpc_notify_presence_received,
   new_unknown_subscriber: lpc_new_unknown_subscriber,
   auth_info_requested:    lpc_prompt_for_auth,
@@ -123,11 +126,27 @@ LinphoneCoreVTable lpc_vtable = {
   display_question:       lpc_dummy,
   call_log_updated:       lpc_dummy,
   text_received:          lpc_text_received,
-  general_state:          NULL,
-  dtmf_received:          NULL,
-  refer_received:         NULL,
-  buddy_info_updated:     NULL,
-  notify_recv:            NULL
+  general_state:          NULL
+*/
+  global_state_changed:         NULL,
+  registration_state_changed:   NULL,
+  call_state_changed:           NULL,
+  //
+  notify_presence_recv:         NULL,
+  new_subscription_request:     NULL,
+  auth_info_requested:          NULL,
+  call_log_updated:             NULL,
+  text_received:                lpc_text_received,
+  dtmf_received:                NULL,
+  refer_received:               NULL,
+  buddy_info_updated:           NULL,
+  notify_recv:                  NULL,
+  display_status:               lpc_display_status,
+  display_message:              lpc_display_something,
+  display_warning:              lpc_display_warning,
+  display_url:                  lpc_display_url,
+  show:                         NULL,
+  call_encryption_changed:      NULL,
 };
 
 
@@ -197,8 +216,8 @@ static void lpc_bye_received(LinphoneCore *lc, const char *from) {
 
 
 static void lpc_text_received(LinphoneCore *lc, LinphoneChatRoom *cr,
-                              const char *from, const char *msg) {
-  printf("%s: %s\n", from, msg);
+                              const LinphoneAddress *from, const char *msg) {
+  printf("%s: %s\n", linphone_address_get_display_name(from), msg);
 }
 
 /***************************************************************************
@@ -215,21 +234,44 @@ void lpcontrol_timer_callback(int id, int group, void *private_data) {
 
 /*****************************************************************/
 
-void lpstates_callback_wrapper(struct _LinphoneCore *lc,
-                               LinphoneGeneralState *gstate)
+static void lpstates_callback_wrapper(struct _LinphoneCore *lc,
+                               LinphoneGlobalState gstate,
+			       const char *message)
 {
-  if (gstate->new_state == GSTATE_POWER_OFF)
+  if (gstate == LinphoneGlobalOff)
     yp_ml_remove_event(-1, LPCONTROL_TIMER_ID);
 
   if (lpstates_data.callback)
-    lpstates_data.callback(lc, gstate);
+    lpstates_data.callback(lc, gstate, message);
+}
+
+static void lpstates_ccallback_wrapper(struct _LinphoneCore *lc,
+			       LinphoneCall *call,
+                               LinphoneCallState gstate,
+			       const char *message)
+{
+  if (lpstates_data.ccallback)
+    lpstates_data.ccallback(lc, call, gstate, message);
+}
+
+static void lpstates_rcallback_wrapper(struct _LinphoneCore *lc,
+			       LinphoneProxyConfig *cfg,
+                               LinphoneRegistrationState gstate,
+			       const char *message)
+{
+  if (lpstates_data.rcallback)
+    lpstates_data.rcallback(lc, cfg, gstate, message);
 }
 
 /*****************************************************************/
 
-void set_lpstates_callback(GeneralStateChange callback) 
+void set_lpstates_callback(LinphoneGlobalStateCb callback,
+		LinphoneCallStateCb ccallback,
+		LinphoneRegistrationStateCb rcallback)
 {
   lpstates_data.callback = callback;
+  lpstates_data.ccallback = ccallback;
+  lpstates_data.rcallback = rcallback;
 }
 
 /*****************************************************************/
@@ -244,8 +286,8 @@ void override_soundcards()
   
   model = ylsysfs_get_model();
 
-  if (lpstates_data.sndcard != NULL)
-    ms_snd_card_destroy(lpstates_data.sndcard);
+  //if (lpstates_data.sndcard != NULL)
+  //  ms_snd_card_destroy(lpstates_data.sndcard);
   
   ringer = ypconfig_get_value("ringer-device");
 
@@ -289,7 +331,7 @@ void lpstates_submit_command(lpstates_command_t command, char *arg)
   char *cp = arg;
   int level;
   
-  /*printf("command %d with arg '%s'\n", command, arg);*/
+  printf("command %d with arg '%s'\n", command, arg);
   
   switch (command) {
     case LPCOMMAND_STARTUP:
@@ -370,12 +412,14 @@ void start_lpcontrol(int autoregister, void *userdata) {
   lpstates_data.autoregister = autoregister;
   lpstates_data.vtable = &lpc_vtable;
   
+  lpstates_data.vtable->global_state_changed       = lpstates_callback_wrapper ;
+  lpstates_data.vtable->registration_state_changed = lpstates_rcallback_wrapper ;
+  lpstates_data.vtable->call_state_changed         = lpstates_ccallback_wrapper ;
+  
 //  linphone_core_enable_logs(stdout);
   linphone_core_disable_logs();
   
   snprintf(lpstates_data.configfile_name, PATH_MAX, "%s/.linphonerc", getenv("HOME"));
-
-  lpc_vtable.general_state = lpstates_callback_wrapper;
 
   if (autoregister) {
     lpstates_submit_command(LPCOMMAND_STARTUP, NULL);

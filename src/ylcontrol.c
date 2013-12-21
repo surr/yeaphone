@@ -108,7 +108,9 @@ void extract_callernum(ylcontrol_data_t *ylc_ptr, const char *line) {
   char *num;
   char *ptr;
   int what;
-  
+ 
+  printf("caller = %s\n", line);
+
   ylc_ptr->callernum[0] = '\0';
   
   if (line && line[0]) {
@@ -194,7 +196,7 @@ void extract_callernum(ylcontrol_data_t *ylc_ptr, const char *line) {
       free(line1);
   }
   
-  /*printf("callernum=%s\n", ylc_ptr->callernum);*/
+  printf("callernum=%s\n", ylc_ptr->callernum);
 }
 
 /**********************************/
@@ -281,14 +283,18 @@ static int get_custom_minring(const char *callernum)
 
 void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
   char c;
-  gstate_t lpstate_power;
-  gstate_t lpstate_call;
-  gstate_t lpstate_reg;
   
-  lpstate_power = linphone_core_get_state(ylc_ptr->lc, GSTATE_GROUP_POWER);
-  lpstate_call = linphone_core_get_state(ylc_ptr->lc, GSTATE_GROUP_CALL);
-  lpstate_reg = linphone_core_get_state(ylc_ptr->lc, GSTATE_GROUP_REG);
+  LinphoneGlobalState lpstate_power = linphone_core_get_global_state(ylc_ptr->lc);
   
+  LinphoneCall *call = linphone_core_get_current_call(ylc_ptr->lc);
+  LinphoneCallState lpstate_call = call ? linphone_call_get_state(call): LinphoneCallIdle;
+  
+  LinphoneProxyConfig *obj;
+  linphone_core_get_default_proxy(ylc_ptr->lc, &obj);
+  LinphoneRegistrationState lpstate_reg = obj ? linphone_proxy_config_get_state(obj) : LinphoneRegistrationNone;
+  
+  printf("power = %d, reg = %d, call = %d\n", lpstate_power, lpstate_reg, lpstate_call);
+
   /* preprocess the key codes */
   switch (code) {
     case 42:              /* left shift */
@@ -307,7 +313,7 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
   }
 
   if (value) {
-    /*printf("key=%d\n", code);*/
+    printf("key=%d\n", code);
     switch (code) {
       case 2:       /* '1'..'9' */
       case 3:
@@ -321,15 +327,15 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
       case 11:      /* '0' */
       case 55:      /* '*' */
       case 103:     /* UP */
-        if (lpstate_power != GSTATE_POWER_ON)
+        if (lpstate_power != LinphoneGlobalOn)
           break;
         /* get the real character */
         c = (code == 55) ? '*' :
             (code == 4 && ylc_ptr->kshift) ? '#' :
             (code == 11) ? '0' : ('0' + code - 1);
 
-        if (lpstate_call == GSTATE_CALL_IDLE &&
-            lpstate_reg  == GSTATE_REG_OK) {
+        if (lpstate_call == LinphoneCallIdle &&
+            lpstate_reg  == LinphoneRegistrationOk) {
           int len = strlen(ylc_ptr->dialnum);
 
           if (code == 103) {
@@ -389,25 +395,24 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
           }
         }
         else
-        if (lpstate_call == GSTATE_CALL_OUT_CONNECTED ||
-            lpstate_call == GSTATE_CALL_IN_CONNECTED) {
+        if (lpstate_call == LinphoneCallConnected) {
           char buf[2];
           buf[0] = c;
           buf[1] = '\0';
           lpstates_submit_command(LPCOMMAND_DTMF, buf);
         }
         else
-        if (lpstate_call == GSTATE_CALL_IN_INVITE &&
+        if (lpstate_call == LinphoneCallIncomingReceived &&
             c == '#') {
           set_yldisp_ringer(YL_RINGER_OFF, 0);
         }
         break;
 
       case 14:         /* KEY_BACKSPACE (C) */
-        if (lpstate_power != GSTATE_POWER_ON)
+        if (lpstate_power != LinphoneGlobalOn)
           break;
-        if (lpstate_call == GSTATE_CALL_IDLE &&
-            lpstate_reg  == GSTATE_REG_OK) {
+        if (lpstate_call == LinphoneCallIdle &&
+            lpstate_reg  == LinphoneRegistrationOk) {
           int len = strlen(ylc_ptr->dialnum);
           if (ylc_ptr->prep_store) {
             ylc_ptr->prep_store = 0;
@@ -434,22 +439,22 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
       case 169:        /* KEY_PHONE (pick up) */
         ylc_ptr->off_hook = 1;
         set_yldisp_backlight(1);
-        if (lpstate_call == GSTATE_CALL_IDLE &&
-            lpstate_reg  == GSTATE_REG_OK) {
+        if (lpstate_call == LinphoneCallIdle &&
+            lpstate_reg  == LinphoneRegistrationOk) {
           set_yldisp_dial_tone(1);
         }
         else
-        if (lpstate_call == GSTATE_CALL_IN_INVITE) {
+        if (lpstate_call == LinphoneCallIncomingReceived) {
           lpstates_submit_command(LPCOMMAND_PICKUP, NULL);
         }
         break;
 
       case 28:         /* KEY_ENTER (send) */
       case 31:         /* KEY_S (SEND on P4K) */
-        if (lpstate_power != GSTATE_POWER_ON)
+        if (lpstate_power != LinphoneGlobalOn)
           break;
-        if (lpstate_call == GSTATE_CALL_IDLE &&
-            lpstate_reg  == GSTATE_REG_OK) {
+        if (lpstate_call == LinphoneCallIdle &&
+            lpstate_reg  == LinphoneRegistrationOk) {
           if (strlen(ylc_ptr->dialnum) == 0 &&
               strlen(ylc_ptr->dialback) > 0) {
             /* dial the current number displayed */
@@ -469,7 +474,7 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
           }
         }
         else
-        if (lpstate_call == GSTATE_CALL_IN_INVITE) {
+        if (lpstate_call == LinphoneCallIncomingReceived) {
           lpstates_submit_command(LPCOMMAND_PICKUP, NULL);
         }
         break;
@@ -478,27 +483,30 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
         ylc_ptr->off_hook = 0;
         set_yldisp_backlight(0);
         set_yldisp_dial_tone(0);
-        if (lpstate_call == GSTATE_CALL_OUT_INVITE ||
-            lpstate_call == GSTATE_CALL_OUT_CONNECTED ||
-            lpstate_call == GSTATE_CALL_IN_INVITE ||
-            lpstate_call == GSTATE_CALL_IN_CONNECTED) {
+        if (lpstate_call == LinphoneCallOutgoingProgress ||
+            lpstate_call == LinphoneCallConnected ||
+            lpstate_call == LinphoneCallIncomingReceived ||
+            lpstate_call == LinphoneCallConnected) {
           lpstates_submit_command(LPCOMMAND_HANGUP, NULL);
         }
         break;
 
       case 1:          /* hang up */
-        if (lpstate_power != GSTATE_POWER_ON)
+        if (lpstate_power != LinphoneGlobalOn)
           break;
         set_yldisp_ringer(YL_RINGER_OFF, 0);
-        if (lpstate_call == GSTATE_CALL_OUT_INVITE ||
-            lpstate_call == GSTATE_CALL_OUT_CONNECTED ||
-            lpstate_call == GSTATE_CALL_IN_INVITE ||
-            lpstate_call == GSTATE_CALL_IN_CONNECTED) {
+        if (lpstate_call == LinphoneCallOutgoingProgress ||
+            lpstate_call == LinphoneCallOutgoingInit ||
+            lpstate_call == LinphoneCallOutgoingRinging ||
+            lpstate_call == LinphoneCallOutgoingEarlyMedia ||
+            lpstate_call == LinphoneCallIncomingReceived ||
+            lpstate_call == LinphoneCallStreamsRunning ||
+            lpstate_call == LinphoneCallConnected) {
           lpstates_submit_command(LPCOMMAND_HANGUP, NULL);
         }
         else
-        if (lpstate_call == GSTATE_CALL_IDLE &&
-            lpstate_reg  == GSTATE_REG_OK) {
+        if (lpstate_call == LinphoneCallIdle &&
+            lpstate_reg  == LinphoneRegistrationOk) {
           ylc_ptr->dialnum[0] = '\0';
           ylc_ptr->dialback[0] = '\0';
           ylc_ptr->prep_store = 0;
@@ -510,26 +518,26 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
 
       case 105:        /* KEY_LEFT (VOL-) */
       case 114:        /* KEY_VOLUMEDOWN */
-        if (lpstate_call == GSTATE_CALL_OUT_CONNECTED ||
-            lpstate_call == GSTATE_CALL_IN_CONNECTED) {
+        if (lpstate_call == LinphoneCallConnected ||
+            lpstate_call == LinphoneCallConnected) {
           lpstates_submit_command(LPCOMMAND_SPKR_VOLDN, NULL);
         }
         else
-        if (lpstate_call == GSTATE_CALL_IN_INVITE /*||
-            lpstate_call == GSTATE_CALL_IDLE*/) {
+        if (lpstate_call == LinphoneCallIncomingReceived /*||
+            lpstate_call == LinphoneCallIdle*/) {
           lpstates_submit_command(LPCOMMAND_RING_VOLDN, NULL);
         }
         break;
 
       case 106:        /* KEY_RIGHT (VOL+) */
       case 115:        /* KEY_VOLUMEUP */
-        if (lpstate_call == GSTATE_CALL_OUT_CONNECTED ||
-            lpstate_call == GSTATE_CALL_IN_CONNECTED) {
+        if (lpstate_call == LinphoneCallConnected ||
+            lpstate_call == LinphoneCallConnected) {
           lpstates_submit_command(LPCOMMAND_SPKR_VOLUP, NULL);
         }
         else
-        if (lpstate_call == GSTATE_CALL_IN_INVITE /*||
-            lpstate_call == GSTATE_CALL_IDLE*/) {
+        if (lpstate_call == LinphoneCallIncomingReceived /*||
+            lpstate_call == LinphoneCallIdle*/) {
           lpstates_submit_command(LPCOMMAND_RING_VOLUP, NULL);
         }
         break;
@@ -546,29 +554,30 @@ void handle_key(ylcontrol_data_t *ylc_ptr, int code, int value) {
 /**********************************/
 
 void handle_long_key(ylcontrol_data_t *ylc_ptr, int code) {
-  gstate_t lpstate_power;
-  gstate_t lpstate_call;
   
-  lpstate_power = linphone_core_get_state(ylc_ptr->lc, GSTATE_GROUP_POWER);
-  lpstate_call = linphone_core_get_state(ylc_ptr->lc, GSTATE_GROUP_CALL);
+  LinphoneGlobalState lpstate_power = linphone_core_get_global_state(ylc_ptr->lc);
+  
+  LinphoneCall *call = linphone_core_get_current_call(ylc_ptr->lc);
+  LinphoneCallState lpstate_call = call ? linphone_call_get_state(call): LinphoneCallIdle;
+  
   
   switch (code) {
     case 14:         /* C */
-      if (lpstate_power != GSTATE_POWER_ON)
+      if (lpstate_power != LinphoneGlobalOn)
         break;
-      if (lpstate_call == GSTATE_CALL_IDLE) {
+      if (lpstate_call == LinphoneCallIdle) {
         ylcontrol_data.dialnum[0] = '\0';
         display_dialnum(ylcontrol_data.default_display);
       }
       break;
     
     case 1:          /* hang up */
-      if (lpstate_power == GSTATE_POWER_OFF) {
+      if (lpstate_power == LinphoneGlobalOff) {
         lpstates_submit_command(LPCOMMAND_STARTUP, NULL);
       }
       else
-      if (lpstate_power != GSTATE_POWER_OFF &&
-          lpstate_power != GSTATE_POWER_SHUTDOWN) {
+      if (lpstate_power != LinphoneGlobalOff &&
+          lpstate_power != LinphoneGlobalShutdown) {
         lpstates_submit_command(LPCOMMAND_SHUTDOWN, NULL);
       }
       break;
@@ -580,24 +589,14 @@ void handle_long_key(ylcontrol_data_t *ylc_ptr, int code) {
 
 /**********************************/
 
-void lps_callback(struct _LinphoneCore *lc,
-                  LinphoneGeneralState *gstate) {
-  gstate_t lpstate_power;
-  gstate_t lpstate_call;
-  gstate_t lpstate_reg;
-  ylsysfs_model model;
-  
+void lps_global_state_callback(struct _LinphoneCore *lc,
+                  LinphoneGlobalState gstate,
+		  const char *message) {
   /* make sure this is the same thread as our main loop! */
   assert(yp_ml_same_thread());
-  
-  lpstate_power = linphone_core_get_state(lc, GSTATE_GROUP_POWER);
-  lpstate_call = linphone_core_get_state(lc, GSTATE_GROUP_CALL);
-  lpstate_reg = linphone_core_get_state(lc, GSTATE_GROUP_REG);
-  
-  model = ylsysfs_get_model();
-  
-  switch (gstate->new_state) {
-    case GSTATE_POWER_OFF:
+  printf("global state = %d, '%s'\n", gstate, message);
+  switch (gstate) {
+    case LinphoneGlobalOff:
       yldisp_hide_all();
       if (ylcontrol_data.hard_shutdown)
         yp_ml_stop();
@@ -605,60 +604,59 @@ void lps_callback(struct _LinphoneCore *lc,
         set_yldisp_text("   - off -  ");
       break;
       
-    case GSTATE_POWER_STARTUP:
+    case LinphoneGlobalStartup:
       yldisp_show_date();
       set_yldisp_text("- startup - ");
       yldisp_led_blink(150, 150);
       break;
       
-    case GSTATE_POWER_ON:
+    case LinphoneGlobalOn:
       display_dialnum(ylcontrol_data.default_display);
       break;
       
-    case GSTATE_REG_FAILED:
-      if (lpstate_power != GSTATE_POWER_ON)
-        break;
-      if (lpstate_call == GSTATE_CALL_IDLE) {
-        if (ylcontrol_data.dialnum[0] == '\0') {
-          set_yldisp_text("-reg failed-");
-        }
-        yldisp_led_blink(150, 150);
-      }
-      break;
-      
-    case GSTATE_POWER_SHUTDOWN:
+    case LinphoneGlobalShutdown:
       yldisp_hide_all();
       yldisp_led_blink(150, 150);
       set_yldisp_text("- shutdown -");
       break;
       
-    case GSTATE_REG_OK:
-      if (lpstate_power != GSTATE_POWER_ON)
-        break;
-      if (lpstate_call == GSTATE_CALL_IDLE) {
-        if (ylcontrol_data.dialnum[0] == '\0') {
-          display_dialnum((ylcontrol_data.dialback[0]) ?
-                     ylcontrol_data.dialback : ylcontrol_data.default_display);
-        }
-        yldisp_led_on();
-      }
+    default:
       break;
-      
-    case GSTATE_CALL_IDLE:
-      if (lpstate_power != GSTATE_POWER_ON)
+  }
+}
+
+void lps_call_state_callback(struct _LinphoneCore *lc,
+		  LinphoneCall *call,
+                  LinphoneCallState gstate,
+		  const char *message) {
+  /* make sure this is the same thread as our main loop! */
+  assert(yp_ml_same_thread());
+  
+  LinphoneGlobalState lpstate_power = linphone_core_get_global_state(lc);
+  LinphoneProxyConfig *obj;
+  linphone_core_get_default_proxy(lc, &obj);
+  LinphoneRegistrationState lpstate_reg = obj ? linphone_proxy_config_get_state(obj) : LinphoneRegistrationNone;
+  
+  printf("call state = %d, '%s'\n", gstate, message);
+  
+  ylsysfs_model model = ylsysfs_get_model();
+  
+  switch (gstate) {
+    case LinphoneCallIdle:
+      if (lpstate_power != LinphoneGlobalOn)
         break;
-      if (lpstate_reg == GSTATE_REG_FAILED) {
+      if (lpstate_reg == LinphoneRegistrationFailed) {
         set_yldisp_text("-reg failed-");
         ylcontrol_data.dialnum[0] = '\0';
         yldisp_led_blink(150, 150);
       }
-      else if (lpstate_reg == GSTATE_REG_OK) {
+      else if (lpstate_reg == LinphoneRegistrationOk) {
         yldisp_led_on();
       }
       break;
       
-    case GSTATE_CALL_IN_INVITE:
-      extract_callernum(&ylcontrol_data, gstate->message);
+    case LinphoneCallIncomingReceived:
+      extract_callernum(&ylcontrol_data, message);
       load_custom_ringtone(ylcontrol_data.callernum);
       if (strlen(ylcontrol_data.callernum)) {
         display_dialnum(ylcontrol_data.callernum);
@@ -683,20 +681,20 @@ void lps_callback(struct _LinphoneCore *lc,
       set_yldisp_ringer(YL_RINGER_ON, get_custom_minring(ylcontrol_data.callernum));
       break;
       
-    case GSTATE_CALL_IN_CONNECTED:
+    case LinphoneCallConnected:
       set_yldisp_ringer(YL_RINGER_OFF, 0);
       /* start timer */
       yldisp_start_counter();
       yldisp_led_blink(1000, 100);
       break;
       
-    case GSTATE_CALL_OUT_INVITE:
+    case LinphoneCallOutgoingProgress:
       set_yldisp_call_type(YL_CALL_OUT);
       yldisp_led_blink(300, 300);
       yldisp_show_counter();
       break;
       
-    case GSTATE_CALL_OUT_CONNECTED:
+    case LinphoneCallUpdated:
       /* Unfortunately this state is sent already if early media is
        * available. If the remote party picks up it is sent again, so
        * the duration of the call is reset and displayed correctly. */
@@ -704,7 +702,7 @@ void lps_callback(struct _LinphoneCore *lc,
       yldisp_led_blink(1000, 100);
       break;
       
-    case GSTATE_CALL_END:
+    case LinphoneCallEnd:
       set_yldisp_ringer(YL_RINGER_OFF_DELAYED, 0);
       set_yldisp_call_type(YL_CALL_NONE);
       display_dialnum((ylcontrol_data.dialback[0]) ?
@@ -714,7 +712,7 @@ void lps_callback(struct _LinphoneCore *lc,
       set_yldisp_backlight(0);
       break;
       
-    case GSTATE_CALL_ERROR:
+    case LinphoneCallError:
       set_yldisp_ringer(YL_RINGER_OFF, 0);
       ylcontrol_data.dialback[0] = '\0';
       set_yldisp_call_type(YL_CALL_NONE);
@@ -722,6 +720,50 @@ void lps_callback(struct _LinphoneCore *lc,
       yldisp_show_date();
       yldisp_led_on();
       set_yldisp_backlight(0);
+      break;
+      
+    default:
+      break;
+  }
+}
+
+void lps_registration_state_callback(struct _LinphoneCore *lc,
+		  LinphoneProxyConfig *cfg,
+                  LinphoneRegistrationState gstate,
+		  const char *message) {
+  LinphoneGlobalState lpstate_power;
+  LinphoneRegistrationState lpstate_reg;
+  
+  /* make sure this is the same thread as our main loop! */
+  assert(yp_ml_same_thread());
+  
+  lpstate_power = linphone_core_get_global_state(lc);
+
+  LinphoneCall *call = linphone_core_get_current_call(lc);
+  LinphoneCallState lpstate_call = call ? linphone_call_get_state(call): LinphoneCallIdle;
+  
+  switch (gstate) {
+    case LinphoneRegistrationFailed:
+      if (lpstate_power != LinphoneGlobalOn)
+        break;
+      if (lpstate_call == LinphoneCallIdle) {
+        if (ylcontrol_data.dialnum[0] == '\0') {
+          set_yldisp_text("-reg failed-");
+        }
+        yldisp_led_blink(150, 150);
+      }
+      break;
+      
+    case LinphoneRegistrationOk:
+      if (lpstate_power != LinphoneGlobalOn)
+        break;
+      if (lpstate_call == LinphoneCallIdle) {
+        if (ylcontrol_data.dialnum[0] == '\0') {
+          display_dialnum((ylcontrol_data.dialback[0]) ?
+                     ylcontrol_data.dialback : ylcontrol_data.default_display);
+        }
+        yldisp_led_on();
+      }
       break;
       
     default:
@@ -777,7 +819,9 @@ void ylcontrol_io_callback(int id, int group, void *private_data) {
 void init_ylcontrol(char *countrycode) {
   int modified = 0;
   
-  set_lpstates_callback(lps_callback);
+  set_lpstates_callback(lps_global_state_callback,
+		  lps_call_state_callback,
+		  lps_registration_state_callback);
 
   ylcontrol_data.intl_access_code = ypconfig_get_value("intl-access-code");
   if (!ylcontrol_data.intl_access_code) {
@@ -836,10 +880,10 @@ void start_ylcontrol() {
 
 void stop_ylcontrol() {
   ylcontrol_data.hard_shutdown = 1;
-  gstate_t lpstate_power;
+  LinphoneGlobalState lpstate_power;
 
-  lpstate_power = linphone_core_get_state(ylcontrol_data.lc, GSTATE_GROUP_POWER);
-  if (lpstate_power == GSTATE_POWER_OFF) {
+  lpstate_power = linphone_core_get_global_state(ylcontrol_data.lc);
+  if (lpstate_power == LinphoneGlobalOff) {
     /* already powered off */
     yldisp_hide_all();
     yp_ml_stop();
