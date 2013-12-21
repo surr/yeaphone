@@ -265,7 +265,7 @@ static int callerid2minring(const char *dialnum)
 
 static int get_custom_minring(const char *callernum)
 {
-  int minring;
+  int minring = -1;
 
   if (callernum && strlen(callernum))
     minring = callerid2minring(callernum);
