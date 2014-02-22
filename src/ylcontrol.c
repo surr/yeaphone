@@ -694,14 +694,6 @@ void lps_call_state_callback(struct _LinphoneCore *lc,
       yldisp_show_counter();
       break;
       
-    case LinphoneCallUpdated:
-      /* Unfortunately this state is sent already if early media is
-       * available. If the remote party picks up it is sent again, so
-       * the duration of the call is reset and displayed correctly. */
-      yldisp_start_counter();
-      yldisp_led_blink(1000, 100);
-      break;
-      
     case LinphoneCallEnd:
       set_yldisp_ringer(YL_RINGER_OFF_DELAYED, 0);
       set_yldisp_call_type(YL_CALL_NONE);
