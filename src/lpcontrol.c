@@ -238,7 +238,7 @@ void override_soundcards()
 {
   ylsysfs_model model;
   int card;
-  char *pcm_name = NULL;
+  char pcm_name[20];
   char *ringer;
   const char* devid;
   
@@ -252,8 +252,9 @@ void override_soundcards()
   card = ylsysfs_get_alsa_card();
   if (card >= 0) {
     // get ALSA sound card name
-    snd_card_get_name(card, &pcm_name);
+    snprintf(pcm_name, sizeof(pcm_name), "plughw:%d", card);
     lpstates_data.sndcard = ms_alsa_card_new_custom(pcm_name, pcm_name);
+    ms_snd_card_manager_add_card(ms_snd_card_manager_get(),lpstates_data.sndcard);
     devid = ms_snd_card_get_string_id(lpstates_data.sndcard);
 
     linphone_core_set_playback_device(lpstates_data.core_state, devid);
